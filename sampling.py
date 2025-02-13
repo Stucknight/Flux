@@ -1,11 +1,10 @@
-import flux_math
 import math
 from typing import Callable
 
 import numpy as np
 import torch
-from einops import rearrange, repeat
 from PIL import Image
+from einops import rearrange, repeat
 from torch import Tensor
 
 from model import Flux
@@ -15,12 +14,12 @@ from modules.image_embedders import CannyImageEncoder, DepthImageEncoder, ReduxI
 
 
 def get_noise(
-    num_samples: int,
-    height: int,
-    width: int,
-    device: torch.device,
-    dtype: torch.dtype,
-    seed: int,
+        num_samples: int,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        seed: int,
 ):
     return torch.randn(
         num_samples,
@@ -69,13 +68,13 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
 
 
 def prepare_control(
-    t5: HFEmbedder,
-    clip: HFEmbedder,
-    img: Tensor,
-    prompt: str | list[str],
-    ae: AutoEncoder,
-    encoder: DepthImageEncoder | CannyImageEncoder,
-    img_cond_path: str,
+        t5: HFEmbedder,
+        clip: HFEmbedder,
+        img: Tensor,
+        prompt: str | list[str],
+        ae: AutoEncoder,
+        encoder: DepthImageEncoder | CannyImageEncoder,
+        img_cond_path: str,
 ) -> dict[str, Tensor]:
     # load and encode the conditioning image
     bs, _, h, w = img.shape
@@ -106,13 +105,13 @@ def prepare_control(
 
 
 def prepare_fill(
-    t5: HFEmbedder,
-    clip: HFEmbedder,
-    img: Tensor,
-    prompt: str | list[str],
-    ae: AutoEncoder,
-    img_cond_path: str,
-    mask_path: str,
+        t5: HFEmbedder,
+        clip: HFEmbedder,
+        img: Tensor,
+        prompt: str | list[str],
+        ae: AutoEncoder,
+        img_cond_path: str,
+        mask_path: str,
 ) -> dict[str, Tensor]:
     # load and encode the conditioning image and the mask
     bs, _, _, _ = img.shape
@@ -159,12 +158,12 @@ def prepare_fill(
 
 
 def prepare_redux(
-    t5: HFEmbedder,
-    clip: HFEmbedder,
-    img: Tensor,
-    prompt: str | list[str],
-    encoder: ReduxImageEncoder,
-    img_cond_path: str,
+        t5: HFEmbedder,
+        clip: HFEmbedder,
+        img: Tensor,
+        prompt: str | list[str],
+        encoder: ReduxImageEncoder,
+        img_cond_path: str,
 ) -> dict[str, Tensor]:
     bs, _, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
@@ -213,7 +212,7 @@ def time_shift(mu: float, sigma: float, t: Tensor):
 
 
 def get_lin_function(
-    x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
+        x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
 ) -> Callable[[float], float]:
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
@@ -221,11 +220,11 @@ def get_lin_function(
 
 
 def get_schedule(
-    num_steps: int,
-    image_seq_len: int,
-    base_shift: float = 0.5,
-    max_shift: float = 1.15,
-    shift: bool = True,
+        num_steps: int,
+        image_seq_len: int,
+        base_shift: float = 0.5,
+        max_shift: float = 1.15,
+        shift: bool = True,
 ) -> list[float]:
     # extra step for zero
     timesteps = torch.linspace(1, 0, num_steps + 1)
@@ -240,18 +239,18 @@ def get_schedule(
 
 
 def denoise(
-    model: Flux,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    vec: Tensor,
-    # sampling parameters
-    timesteps: list[float],
-    guidance: float = 4.0,
-    # extra img tokens
-    img_cond: Tensor | None = None,
+        model: Flux,
+        # model input
+        img: Tensor,
+        img_ids: Tensor,
+        txt: Tensor,
+        txt_ids: Tensor,
+        vec: Tensor,
+        # sampling parameters
+        timesteps: list[float],
+        guidance: float = 4.0,
+        # extra img tokens
+        img_cond: Tensor | None = None,
 ):
     # this is ignored for schnell
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)

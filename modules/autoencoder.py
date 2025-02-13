@@ -108,13 +108,13 @@ class Upsample(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(
-        self,
-        resolution: int,
-        in_channels: int,
-        ch: int,
-        ch_mult: list[int],
-        num_res_blocks: int,
-        z_channels: int,
+            self,
+            resolution: int,
+            in_channels: int,
+            ch: int,
+            ch_mult: list[int],
+            num_res_blocks: int,
+            z_channels: int,
     ):
         super().__init__()
         self.ch = ch
@@ -182,14 +182,14 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(
-        self,
-        ch: int,
-        out_ch: int,
-        ch_mult: list[int],
-        num_res_blocks: int,
-        in_channels: int,
-        resolution: int,
-        z_channels: int,
+            self,
+            ch: int,
+            out_ch: int,
+            ch_mult: list[int],
+            num_res_blocks: int,
+            in_channels: int,
+            resolution: int,
+            z_channels: int,
     ):
         super().__init__()
         self.ch = ch

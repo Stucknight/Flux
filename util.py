@@ -7,7 +7,7 @@ from einops import rearrange
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file as load_sft
 
-from model import Flux, FluxLoraWrapper, FluxParams
+from model import Flux, FluxParams
 from modules.autoencoder import AutoEncoder, AutoEncoderParams
 from modules.conditioner import HFEmbedder
 

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from glob import iglob
 
 import torch
-from cuda import cudart
 from transformers import pipeline
 
 from sampling import denoise, get_noise, get_schedule, prepare, unpack
@@ -23,22 +22,23 @@ class SamplingOptions:
     guidance: float
     seed: int | None
 
+
 @torch.inference_mode()
 def main(
-    name: str = "flux-dev",
-    width: int = 1360,
-    height: int = 768,
-    seed: int | None = None,
-    prompt: str = (
-        "a photo of a forest with mist swirling around the tree trunks. The word "
-        '"FLUX" is painted over it in big, red brush strokes with visible texture'
-    ),
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    guidance: float = 3.5,
-    offload: bool = False,
-    output_dir: str = "output",
-    add_sampling_metadata: bool = True,
-    **kwargs: dict | None,
+        name: str = "flux-dev",
+        width: int = 1360,
+        height: int = 768,
+        seed: int | None = None,
+        prompt: str = (
+                "a photo of a forest with mist swirling around the tree trunks. The word "
+                '"FLUX" is painted over it in big, red brush strokes with visible texture'
+        ),
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        guidance: float = 3.5,
+        offload: bool = False,
+        output_dir: str = "output",
+        add_sampling_metadata: bool = True,
+        **kwargs: dict | None,
 ):
     """
     Sample the flux model. Run for a
@@ -74,7 +74,7 @@ def main(
         raise ValueError(f"Got unknown model name: {name}, chose from {available}")
 
     torch_device = torch.device(device)
-    num_steps =  28
+    num_steps = 28
 
     # allow for packing and conversion to latent space
     height = 16 * (height // 16)
@@ -160,9 +160,9 @@ def main(
         idx = save_image(nsfw_classifier, name, output_name, idx, x, add_sampling_metadata, prompt)
 
 
-
 def app():
     main(offload=True)
+
 
 if __name__ == "__main__":
     app()

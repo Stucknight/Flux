@@ -3,8 +3,8 @@ import os
 import cv2
 import numpy as np
 import torch
-from einops import rearrange, repeat
 from PIL import Image
+from einops import rearrange, repeat
 from safetensors.torch import load_file as load_sft
 from torch import nn
 from transformers import AutoModelForDepthEstimation, AutoProcessor, SiglipImageProcessor, SiglipVisionModel
@@ -37,10 +37,10 @@ class DepthImageEncoder:
 
 class CannyImageEncoder:
     def __init__(
-        self,
-        device,
-        min_t: int = 50,
-        max_t: int = 200,
+            self,
+            device,
+            min_t: int = 50,
+            max_t: int = 200,
     ):
         self.device = device
         self.min_t = min_t
@@ -67,12 +67,12 @@ class ReduxImageEncoder(nn.Module):
     siglip_model_name = "google/siglip-so400m-patch14-384"
 
     def __init__(
-        self,
-        device,
-        redux_dim: int = 1152,
-        txt_in_features: int = 4096,
-        redux_path: str | None = os.getenv("FLUX_REDUX"),
-        dtype=torch.bfloat16,
+            self,
+            device,
+            redux_dim: int = 1152,
+            txt_in_features: int = 4096,
+            redux_path: str | None = os.getenv("FLUX_REDUX"),
+            dtype=torch.bfloat16,
     ) -> None:
         assert redux_path is not None, "Redux path must be provided"
 

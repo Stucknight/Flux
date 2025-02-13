@@ -11,7 +11,6 @@ from modules.layers import (
     SingleStreamBlock,
     timestep_embedding,
 )
-from modules.lora import LinearLora, replace_linear_with_lora
 
 
 @dataclass
@@ -82,14 +81,14 @@ class Flux(nn.Module):
         self.final_layer = LastLayer(self.hidden_size, 1, self.out_channels)
 
     def forward(
-        self,
-        img: Tensor,
-        img_ids: Tensor,
-        txt: Tensor,
-        txt_ids: Tensor,
-        timesteps: Tensor,
-        y: Tensor,
-        guidance: Tensor | None = None,
+            self,
+            img: Tensor,
+            img_ids: Tensor,
+            txt: Tensor,
+            txt_ids: Tensor,
+            timesteps: Tensor,
+            y: Tensor,
+            guidance: Tensor | None = None,
     ) -> Tensor:
         if img.ndim != 3 or txt.ndim != 3:
             raise ValueError("Input img and txt tensors must have 3 dimensions.")
@@ -113,31 +112,7 @@ class Flux(nn.Module):
         img = torch.cat((txt, img), 1)
         for block in self.single_blocks:
             img = block(img, vec=vec, pe=pe)
-        img = img[:, txt.shape[1] :, ...]
+        img = img[:, txt.shape[1]:, ...]
 
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img
-
-
-class FluxLoraWrapper(Flux):
-    def __init__(
-        self,
-        lora_rank: int = 128,
-        lora_scale: float = 1.0,
-        *args,
-        **kwargs,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-
-        self.lora_rank = lora_rank
-
-        replace_linear_with_lora(
-            self,
-            max_rank=lora_rank,
-            scale=lora_scale,
-        )
-
-    def set_lora_scale(self, scale: float) -> None:
-        for module in self.modules():
-            if isinstance(module, LinearLora):
-                module.set_scale(scale=scale)
