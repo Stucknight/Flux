@@ -61,7 +61,7 @@ configs = {
         repo_id="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
-        ckpt_path=None,
+        ckpt_path="models/.cache/flux1-dev.safetensors",
         lora_path=None,
         params=FluxParams(
             in_channels=64,
@@ -76,9 +76,9 @@ configs = {
             axes_dim=[16, 56, 56],
             theta=10_000,
             qkv_bias=True,
-            guidance_embed=True,
+            guidance_embed=False,
         ),
-        ae_path=None,
+        ae_path="models/.cache/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -105,8 +105,7 @@ def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
         print(f"Got {len(unexpected)} unexpected keys:\n\t" + "\n\t".join(unexpected))
 
 
-def load_flow_model(
-        name: str, device: str | torch.device = "cuda", hf_download: bool = True):
+def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     print("Init model")
     ckpt_path = configs[name].ckpt_path
     if (
@@ -115,7 +114,7 @@ def load_flow_model(
             and configs[name].repo_flow is not None
             and hf_download
     ):
-        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow)
+        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow, local_dir="models")
     print(ckpt_path)
     with torch.device("meta" if ckpt_path is None else device):
         model = Flux(configs[name].params).to(torch.bfloat16)
@@ -145,8 +144,8 @@ def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = 
             and configs[name].repo_ae is not None
             and hf_download
     ):
-        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_ae)
-
+        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_ae, local_dir="models")
+    print(ckpt_path)
     print("Init AE")
     with torch.device("meta" if ckpt_path is not None else device):
         ae = AutoEncoder(configs[name].ae_params)

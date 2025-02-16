@@ -1,67 +1,70 @@
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from torch.utils.data import DataLoader
 
-from sampling import denoise, get_noise, get_schedule, prepare, unpack
-from util import load_ae, load_clip, load_t5
-
-
-@dataclass
-class SamplingOptions:
-    prompt: str
-    width: int
-    height: int
-    num_steps: int
-    guidance: float
-    seed: int | None
+from dataset import SimpleDataset
+from sampling import get_noise, get_schedule, prepare
+from util import load_ae, load_clip, load_t5, load_flow_model
 
 
-def train_epoch(model, dataloader, device, lr=1e-4):
-    model.train()
-    height = 16 * (1360 // 16)
-    width = 16 * (768 // 16)
-    num_steps = 28
+def train(train_steps, optimizer, lr_scheduler, device, num_steps=1000):
+    step = 0
+
+    model = load_flow_model('flux-dev', device=device)
     t5 = load_t5(device, max_length=512)
     clip = load_clip(device)
     ae = load_ae('flux-dev', device=device)
-    criterion = nn.MSELoss()
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
-    for input_text, target_img in dataloader:
-        rng = torch.Generator(device="cpu")
-        opts = SamplingOptions(
-            prompt=input_text,
-            width=width,
-            height=height,
-            num_steps=num_steps,
-            guidance=3.5,
-            seed=None,
-        )
+    train_dataset = SimpleDataset(root="./", mode='train')
+    val_dataset = SimpleDataset(root="./", mode='test')
 
-        optimizer.zero_grad()
+    train_dataloader = DataLoader(train_dataset, batch_size=train_steps, shuffle=True, num_workers=4)
+    val_dataloader = DataLoader(val_dataset, batch_size=train_steps, shuffle=False, num_workers=4)
 
-        if opts.seed is None:
-            opts.seed = rng.seed()
+    while step < train_steps:
+        batch = next(iter(train_dataloader))
+        t5.eval()
+        clip.eval()
+        ae.eval()
+        model.train()
+
+        image = batch["image"].to(device)
+        prompt = batch["prompt"]
+        latents = ae.encode(image)
+        latents = latents * ae.scale_factor
+
+        b, c, h, w = image.shape
 
         x = get_noise(
-            1, opts.height, opts.width,
-            device=device, dtype=torch.bfloat16,
-            seed=opts.seed
+            1,
+            h,
+            w,
+            device=device,
+            dtype=torch.bfloat16,
+            seed=69,
         )
 
-        opts.seed = None
-        inp = prepare(t5, clip, x, prompt=opts.prompt)
-        timesteps = get_schedule(opts.num_steps, inp["img"].shape[1], shift=True)
+        inp = prepare(t5, clip, x, prompt=prompt)
+        img, img_ids, txt, txt_ids, vec = inp["img"], inp["img_ids"], inp["txt"], inp["txt_ids"], inp["vec"]
 
-        x_denoised = denoise(model, **inp, timesteps=timesteps, guidance=opts.guidance)
-        x_denoised = unpack(x_denoised.float(), opts.height, opts.width)
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
-            x_denoised = ae.decode(x_denoised)
+        indices = torch.randint(1, num_steps, (b,))
+        schedule = get_schedule(num_steps, c)
+        t_curr = schedule[indices]
+        t_prev = schedule[indices - 1]
 
-        loss = criterion(x_denoised, target_img)
-        loss.backward()
+        noisy_latent = (t_curr - t_prev) * img + (1.0 - (t_curr - t_prev)) * latents
+        t_vec = torch.full((b,), t_curr, device=device)
+        model_pred = model(noisy_latent, img_ids, txt, txt_ids, t_vec)
+
+        denoised_pred = img + (t_prev - t_curr) * model_pred
+
+        target = latents
+
+        loss = nn.MSELoss(denoised_pred.float(), target.float(), reduction="mean")
+
+        loss.backwards()
+
         optimizer.step()
-
-        print(f"Loss: {loss.item():.4f}")
+        lr_scheduler.step()
+        optimizer.zero_grad()
+        step += 1
