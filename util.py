@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 import torch
@@ -79,7 +78,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-        ae_path=os.getenv("AE"),
+        ae_path=None,
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
