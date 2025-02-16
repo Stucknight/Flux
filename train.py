@@ -10,10 +10,10 @@ from util import load_ae, load_clip, load_t5, load_flow_model
 def train(train_steps, optimizer, lr_scheduler, device, num_steps=1000):
     step = 0
 
-    model = load_flow_model('flux-dev', device=device)
+    model = load_flow_model(device=device)
     t5 = load_t5(device, max_length=512)
     clip = load_clip(device)
-    ae = load_ae('flux-dev', device=device)
+    ae = load_ae(device=device)
 
     train_dataset = SimpleDataset(root="./", mode='train')
     val_dataset = SimpleDataset(root="./", mode='test')
@@ -31,7 +31,6 @@ def train(train_steps, optimizer, lr_scheduler, device, num_steps=1000):
         image = batch["image"].to(device)
         prompt = batch["prompt"]
         latents = ae.encode(image)
-        latents = latents * ae.scale_factor
 
         b, c, h, w = image.shape
 
@@ -44,6 +43,7 @@ def train(train_steps, optimizer, lr_scheduler, device, num_steps=1000):
             seed=69,
         )
 
+        #CODE IS WRONG, CHANGE IT
         inp = prepare(t5, clip, x, prompt=prompt)
         img, img_ids, txt, txt_ids, vec = inp["img"], inp["img_ids"], inp["txt"], inp["txt_ids"], inp["vec"]
 

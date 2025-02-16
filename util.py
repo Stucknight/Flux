@@ -56,42 +56,41 @@ class ModelSpec:
     repo_ae: str | None
 
 
-configs = {
-    "flux-dev": ModelSpec(
-        repo_id="black-forest-labs/FLUX.1-dev",
-        repo_flow="flux1-dev.safetensors",
-        repo_ae="ae.safetensors",
-        ckpt_path="models/.cache/flux1-dev.safetensors",
-        lora_path=None,
-        params=FluxParams(
-            in_channels=64,
-            out_channels=64,
-            vec_in_dim=768,
-            context_in_dim=4096,
-            hidden_size=3072,
-            mlp_ratio=4.0,
-            num_heads=24,
-            depth=19,
-            depth_single_blocks=38,
-            axes_dim=[16, 56, 56],
-            theta=10_000,
-            qkv_bias=True,
-            guidance_embed=False,
-        ),
-        ae_path="models/.cache/ae.safetensors",
-        ae_params=AutoEncoderParams(
-            resolution=256,
-            in_channels=3,
-            ch=128,
-            out_ch=3,
-            ch_mult=[1, 2, 4, 4],
-            num_res_blocks=2,
-            z_channels=16,
-            scale_factor=0.3611,
-            shift_factor=0.1159,
-        )
+flux_configs = {
+    "repo_id": "black-forest-labs/FLUX.1-dev",
+    "repo_flow": "flux1-dev.safetensors",
+    "repo_ae": "ae.safetensors",
+    "ckpt_path": None,
+    "params": FluxParams(
+        in_channels=64,
+        out_channels=64,
+        vec_in_dim=768,
+        context_in_dim=4096,
+        hidden_size=3072,
+        mlp_ratio=4.0,
+        num_heads=24,
+        depth=19,
+        depth_single_blocks=38,
+        axes_dim=[16, 56, 56],
+        theta=10_000,
+        qkv_bias=True,
+        guidance_embed=True,
     )
 }
+
+ae_configs = {
+    "ae_path": None,
+    "ae_params": AutoEncoderParams(
+        resolution=256,
+        in_channels=3,
+        ch=128,
+        out_ch=3,
+        ch_mult=[1, 2, 4, 4],
+        num_res_blocks=2,
+        z_channels=16,
+        scale_factor=0.3611,
+        shift_factor=0.1159,
+    )}
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -105,19 +104,19 @@ def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
         print(f"Got {len(unexpected)} unexpected keys:\n\t" + "\n\t".join(unexpected))
 
 
-def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
+def load_flow_model(device: str | torch.device = "cuda", hf_download: bool = True):
     print("Init model")
-    ckpt_path = configs[name].ckpt_path
+    ckpt_path = flux_configs["ckpt_path"]
     if (
             ckpt_path is None
-            and configs[name].repo_id is not None
-            and configs[name].repo_flow is not None
+            and flux_configs["repo_id"] is not None
+            and flux_configs["repo_flow"] is not None
             and hf_download
     ):
-        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow, local_dir="models")
+        ckpt_path = hf_hub_download(flux_configs["repo_id"], flux_configs["repo_flow"], local_dir="models")
     print(ckpt_path)
     with torch.device("meta" if ckpt_path is None else device):
-        model = Flux(configs[name].params).to(torch.bfloat16)
+        model = Flux(flux_configs["params"]).to(torch.bfloat16)
 
     if ckpt_path is not None:
         print("Loading checkpoint")
@@ -136,19 +135,19 @@ def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
 
 
-def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = True) -> AutoEncoder:
-    ckpt_path = configs[name].ae_path
+def load_ae(device: str | torch.device = "cuda", hf_download: bool = True) -> AutoEncoder:
+    ckpt_path = ae_configs["ae_path"]
     if (
             ckpt_path is None
-            and configs[name].repo_id is not None
-            and configs[name].repo_ae is not None
+            and flux_configs["repo_id"] is not None
+            and flux_configs["repo_ae"] is not None
             and hf_download
     ):
-        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_ae, local_dir="models")
-    print(ckpt_path)
+        ckpt_path = hf_hub_download(flux_configs["repo_id"], flux_configs["repo_ae"], local_dir="models")
+
     print("Init AE")
     with torch.device("meta" if ckpt_path is not None else device):
-        ae = AutoEncoder(configs[name].ae_params)
+        ae = AutoEncoder(ae_configs["ae_params"])
 
     if ckpt_path is not None:
         sd = load_sft(ckpt_path, device=str(device))
@@ -164,7 +163,6 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
                 print(
                     f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}."
                 )
-                # expand with zeros:
                 expanded_state_dict_weight = torch.zeros_like(param, device=state_dict[name].device)
                 slices = tuple(slice(0, dim) for dim in state_dict[name].shape)
                 expanded_state_dict_weight[slices] = state_dict[name]
