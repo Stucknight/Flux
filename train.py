@@ -27,19 +27,26 @@ clip.requires_grad_(False)
 
 flux.to(dtype=dtype, device=device)
 vae.to(dtype=dtype, device=device)
-
 flux.train()
 
-optimizer = torch.optim.AdamW(flux.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2)
+optimizer = torch.optim.AdamW(
+    flux.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2
+)
+loss_fn = nn.MSELoss(reduction="mean")
+
 flux, optimizer, train_dataloader = accelerator.prepare([flux, optimizer, train_dataloader])
 
 epochs = 10
+p_uncond = 0.1
 
 for epoch in range(epochs):
     train_loss = 0.0
     for step, batch in enumerate(train_dataloader):
         img, prompts = batch
         img = img.to(device, dtype=dtype)
+
+        if torch.rand(1).item() < p_uncond:
+            prompts = ""
 
         with torch.no_grad():
             x_1 = vae.encode(img)
@@ -52,13 +59,21 @@ for epoch in range(epochs):
         x_t = (1 - t) * x_1 + t * x_0
 
         with accelerator.autocast():
-            model_pred = flux(img=x_t.to(dtype), img_ids=inp['img_ids'].to(dtype), txt=inp['txt'].to(dtype), txt_ids=inp['txt_ids'].to(dtype), y=inp['vec'].to(dtype), timesteps=t.to(dtype))
-            loss = nn.MSELoss(model_pred.float(), (x_0 - x_1).float(), reduction='mean')
+            model_pred = flux(
+                img=x_t.to(dtype),
+                img_ids=inp["img_ids"].to(dtype),
+                txt=inp["txt"].to(dtype),
+                txt_ids=inp["txt_ids"].to(dtype),
+                y=inp["vec"].to(dtype),
+                timesteps=t.to(dtype),
+            )
+            loss = loss_fn(model_pred.float(), (x_0 - x_1).float())
 
         accelerator.backward(loss)
-        optimizer.step()
-        optimizer.zero_grad()
-        train_loss += loss.item()
+        if accelerator.sync_gradients:
+            optimizer.step()
+            optimizer.zero_grad()
 
+        train_loss += loss.item()
     accelerator.print(f"Epoch {epoch+1}/{epochs}, Loss: {train_loss / len(train_dataloader):.6f}")
 accelerator.wait_for_everyone()
