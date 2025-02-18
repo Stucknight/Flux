@@ -100,19 +100,28 @@ def denoise(
         guidance: float = 4.0,
         img_cond: Tensor | None = None,
 ):
-    guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-        pred = model(
-            img=torch.cat((img, img_cond), dim=-1) if img_cond is not None else img,
+        cond_img = torch.cat((img, img_cond), dim=-1) if img_cond is not None else img
+        pred_uncond = model(
+            img=cond_img,
+            img_ids=img_ids,
+            txt=None,
+            txt_ids=None,
+            y=vec,
+            timesteps=t_vec,
+        )
+
+        pred_cond = model(
+            img=cond_img,
             img_ids=img_ids,
             txt=txt,
             txt_ids=txt_ids,
             y=vec,
             timesteps=t_vec,
-            guidance=guidance_vec,
         )
 
+        pred = pred_uncond + guidance * (pred_cond - pred_uncond)
         img = img + (t_prev - t_curr) * pred
 
     return img

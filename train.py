@@ -1,70 +1,64 @@
+import accelerate
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from einops import rearrange
 
-from dataset import SimpleDataset
-from sampling import get_noise, get_schedule, prepare
-from util import load_ae, load_clip, load_t5, load_flow_model
+from dataset import loader
+from datasets import load_dataset
+from sampling import prepare
+from util import load_clip, load_t5, load_flow_model, load_ae
 
+dtype = torch.bfloat16
+deepspeed_plugin = accelerate.DeepSpeedPlugin(zero_stage=2)
+accelerator = accelerate.Accelerator(gradient_accumulation_steps=2, mixed_precision="bf16", deepspeed_plugin=deepspeed_plugin)
+device = accelerator.device
 
-def train(train_steps, optimizer, lr_scheduler, device, num_steps=1000):
-    step = 0
+data = load_dataset("dream-textures/textures-normal-1k")
+train_dataloader = loader(train_batch_size=1, num_workers=2, data=data)
 
-    model = load_flow_model(device=device)
-    t5 = load_t5(device, max_length=512)
-    clip = load_clip(device)
-    ae = load_ae(device=device)
+clip = load_clip(device=device)
+t5 = load_t5(device=device)
+flux = load_flow_model()
+vae = load_ae()
 
-    train_dataset = SimpleDataset(root="./", mode='train')
-    val_dataset = SimpleDataset(root="./", mode='test')
+vae.requires_grad_(False)
+t5.requires_grad_(False)
+clip.requires_grad_(False)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=train_steps, shuffle=True, num_workers=4)
-    val_dataloader = DataLoader(val_dataset, batch_size=train_steps, shuffle=False, num_workers=4)
+flux.to(dtype=dtype, device=device)
+vae.to(dtype=dtype, device=device)
 
-    while step < train_steps:
-        batch = next(iter(train_dataloader))
-        t5.eval()
-        clip.eval()
-        ae.eval()
-        model.train()
+flux.train()
 
-        image = batch["image"].to(device)
-        prompt = batch["prompt"]
-        latents = ae.encode(image)
+optimizer = torch.optim.AdamW(flux.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2)
+flux, optimizer, train_dataloader = accelerator.prepare([flux, optimizer, train_dataloader])
 
-        b, c, h, w = image.shape
+epochs = 10
 
-        x = get_noise(
-            1,
-            h,
-            w,
-            device=device,
-            dtype=torch.bfloat16,
-            seed=69,
-        )
+for epoch in range(epochs):
+    train_loss = 0.0
+    for step, batch in enumerate(train_dataloader):
+        img, prompts = batch
+        img = img.to(device, dtype=dtype)
 
-        #CODE IS WRONG, CHANGE IT
-        inp = prepare(t5, clip, x, prompt=prompt)
-        img, img_ids, txt, txt_ids, vec = inp["img"], inp["img_ids"], inp["txt"], inp["txt_ids"], inp["vec"]
+        with torch.no_grad():
+            x_1 = vae.encode(img)
+            inp = prepare(t5=t5, clip=clip, img=x_1, prompt=prompts)
+            x_1 = rearrange(x_1, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
 
-        indices = torch.randint(1, num_steps, (b,))
-        schedule = get_schedule(num_steps, c)
-        t_curr = schedule[indices]
-        t_prev = schedule[indices - 1]
+        bs = img.shape[0]
+        t = torch.sigmoid(torch.randn((bs,), device=device))
+        x_0 = torch.randn_like(x_1).to(device)
+        x_t = (1 - t) * x_1 + t * x_0
 
-        noisy_latent = (t_curr - t_prev) * img + (1.0 - (t_curr - t_prev)) * latents
-        t_vec = torch.full((b,), t_curr, device=device)
-        model_pred = model(noisy_latent, img_ids, txt, txt_ids, t_vec)
+        with accelerator.autocast():
+            model_pred = flux(img=x_t.to(dtype), img_ids=inp['img_ids'].to(dtype), txt=inp['txt'].to(dtype), txt_ids=inp['txt_ids'].to(dtype), y=inp['vec'].to(dtype), timesteps=t.to(dtype))
+            loss = nn.MSELoss(model_pred.float(), (x_0 - x_1).float(), reduction='mean')
 
-        denoised_pred = img + (t_prev - t_curr) * model_pred
-
-        target = latents
-
-        loss = nn.MSELoss(denoised_pred.float(), target.float(), reduction="mean")
-
-        loss.backwards()
-
+        accelerator.backward(loss)
         optimizer.step()
-        lr_scheduler.step()
         optimizer.zero_grad()
-        step += 1
+        train_loss += loss.item()
+
+    accelerator.print(f"Epoch {epoch+1}/{epochs}, Loss: {train_loss / len(train_dataloader):.6f}")
+accelerator.wait_for_everyone()
