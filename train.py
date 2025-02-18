@@ -2,10 +2,13 @@ import accelerate
 import torch
 import torch.nn as nn
 from einops import rearrange
+from tqdm import tqdm
 
+from safetensors.torch import save_file
+from PIL import Image
 from dataset import loader
 from datasets import load_dataset
-from sampling import prepare
+from sampling import prepare, get_schedule, denoise, get_noise, unpack
 from util import load_clip, load_t5, load_flow_model, load_ae
 
 dtype = torch.bfloat16
@@ -39,9 +42,30 @@ flux, optimizer, train_dataloader = accelerator.prepare([flux, optimizer, train_
 epochs = 10
 p_uncond = 0.1
 
+@torch.no_grad()
+def inference_prompts(prompts, model, t5, clip, vae,
+                      height=512, width=512, device: str | torch.device = "cuda", dtype=torch.bfloat16, seed=69):
+    images = []
+    for i, prompt in enumerate(prompts):
+        noise = get_noise(1, height, width, device, dtype, seed)
+        input = prepare(t5, clip, noise, prompt)
+
+        num_steps = 50
+        timesteps = get_schedule(num_steps, input['img'].shape[1], shift=True)
+        denoised = denoise(model, **input, timesteps=timesteps, guidance=3.5)
+        denoised = unpack(denoised.float(), height, width)
+        image = vae.decode(denoised)
+        image = image.clamp(-1, 1)
+        image = rearrange(image[0], 'c h w -> h w c')
+        images.append(image)
+    return images
+
+prompts = ["acoustic image of light foam"]
+
 for epoch in range(epochs):
+    flux.train()
     train_loss = 0.0
-    for step, batch in enumerate(train_dataloader):
+    for step, batch in enumerate(tqdm(train_dataloader)):
         img, prompts = batch
         img = img.to(device, dtype=dtype)
 
@@ -76,4 +100,17 @@ for epoch in range(epochs):
 
         train_loss += loss.item()
     accelerator.print(f"Epoch {epoch+1}/{epochs}, Loss: {train_loss / len(train_dataloader):.6f}")
+
+    if accelerator.is_main_process:
+        flux.eval()
+        images = inference_prompts(prompts, flux, t5, clip, vae,
+                                   height=512, width=512,
+                                   dtype=dtype)
+        for i, image in enumerate(images):
+            image = Image.fromarray((127.5 * (image + 1.0)).cpu().byte().numpy())
+            image.save(f"epoch_{epoch}_{i}.png", quality=95, subsampling=0)
+
+    unwrapped_model_state = accelerator.unwrap_model(flux).state_dict()
+    save_file(unwrapped_model_state, f"models\\flux_{epoch}.safetensors")
+
 accelerator.wait_for_everyone()
