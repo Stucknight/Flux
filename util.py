@@ -11,11 +11,11 @@ flux_configs = {
         vec_in_dim=768,
         context_in_dim=4096,
         hidden_size=3072,
-        mlp_ratio=4.0,
+        mlp_ratio=2.0,
         num_heads=4,
         depth=2,
         depth_single_blocks=4,
-        axes_dim=[16, 56, 56],
+        axes_dim=[96, 336, 336],
         theta=10_000,
         qkv_bias=True
     )
