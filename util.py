@@ -1,5 +1,7 @@
 import torch
 
+from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file as load_sft
 from model import Flux, FluxParams
 from modules.autoencoder import AutoEncoder, AutoEncoderParams
 from modules.conditioner import HFEmbedder
@@ -35,7 +37,7 @@ ae_configs = {
     )}
 
 def load_flow_model():
-    with torch.device("meta"):
+    with torch.device("cpu"):
         model = Flux(flux_configs["params"]).to(torch.bfloat16)
     return model
 
@@ -48,7 +50,13 @@ def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
 
 
-def load_ae():
-    with torch.device("meta"):
+def load_ae() -> AutoEncoder:
+    ckpt_path = hf_hub_download("black-forest-labs/FLUX.1-dev", "ae.safetensors")
+
+    with torch.device("cpu"):
         ae = AutoEncoder(ae_configs["ae_params"])
+
+    if ckpt_path is not None:
+        sd = load_sft(ckpt_path, device=str("cpu"))
+        missing, unexpected = ae.load_state_dict(sd, strict=False, assign=True)
     return ae

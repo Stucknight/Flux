@@ -7,6 +7,7 @@ accelerate
 datasets
 tqdm
 pillow
+deepspeed
 --extra-index-url https://download.pytorch.org/whl/cu126
 torch
 torchvision
