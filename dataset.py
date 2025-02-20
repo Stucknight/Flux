@@ -83,7 +83,22 @@ class ImageDataset(Dataset):
         except Exception as e:
             print(e)
 
+class PreprocessedDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        idx_data = self.data[idx]
+        return idx_data['x_1'], idx_data['inp']
+
 
 def loader(train_batch_size, num_workers, data):
     dataset = ImageDataset(data)
+    return DataLoader(dataset, batch_size=train_batch_size, num_workers=num_workers, shuffle=True)
+
+def preprocessed_loader(train_batch_size, num_workers, data):
+    dataset = PreprocessedDataset(data)
     return DataLoader(dataset, batch_size=train_batch_size, num_workers=num_workers, shuffle=True)

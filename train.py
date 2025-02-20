@@ -13,9 +13,10 @@ from util import load_clip, load_t5, load_flow_model, load_ae
 
 def main():
     dtype = torch.bfloat16
-    deepspeed_plugin = accelerate.DeepSpeedPlugin(zero_stage=2)
-    accelerator = accelerate.Accelerator(gradient_accumulation_steps=2, mixed_precision="bf16", deepspeed_plugin=deepspeed_plugin)
-    accelerator.state.deepspeed_plugin.deepspeed_config['train_micro_batch_size_per_gpu'] = 1
+    # deepspeed_plugin = accelerate.DeepSpeedPlugin(zero_stage=2)
+    # , deepspeed_plugin=deepspeed_plugin
+    accelerator = accelerate.Accelerator(gradient_accumulation_steps=2, mixed_precision="bf16")
+    # accelerator.state.deepspeed_plugin.deepspeed_config['train_micro_batch_size_per_gpu'] = 1
     device = accelerator.device
 
     data = load_dataset("dream-textures/textures-normal-1k")
@@ -41,6 +42,7 @@ def main():
     flux, optimizer, train_dataloader = accelerator.prepare([flux, optimizer, train_dataloader])
 
     epochs = 10
+    epcohs_per_val = 5
     p_uncond = 0.1
 
     @torch.no_grad()
@@ -63,7 +65,7 @@ def main():
 
     prompts = ["acoustic image of light foam"]
     with accelerator.autocast():
-        for epoch in range(epochs):
+        for epoch in range(1, epochs+1):
             flux.train()
             train_loss = 0.0
             for step, batch in enumerate(tqdm(train_dataloader)):
@@ -83,7 +85,6 @@ def main():
                 x_0 = torch.randn_like(x_1).to(device)
                 x_t = (1 - t) * x_1 + t * x_0
 
-
                 model_pred = flux(
                     img=x_t.to(dtype),
                     img_ids=inp["img_ids"].to(dtype),
@@ -94,8 +95,6 @@ def main():
                 )
 
                 loss = F.mse_loss(model_pred.float(), (x_0 - x_1).float(), reduction="mean")
-                avg_loss = accelerator.gather(loss.repeat(1)).mean()
-                train_loss += avg_loss.item() / 2
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     optimizer.step()
@@ -104,14 +103,15 @@ def main():
                 train_loss += loss.item()
             accelerator.print(f"Epoch {epoch+1}/{epochs}, Loss: {train_loss / len(train_dataloader):.6f}")
 
-            if accelerator.is_main_process:
-                flux.eval()
-                images = inference_prompts(prompts, flux, t5, clip, vae,
-                                           height=512, width=512,
-                                           dtype=dtype)
-                for i, image in enumerate(images):
-                    image = Image.fromarray((127.5 * (image + 1.0)).cpu().byte().numpy())
-                    image.save(f"epoch_{epoch}_{i}.png", quality=95, subsampling=0)
+            if epoch % epcohs_per_val == 0:
+                if accelerator.is_main_process:
+                    flux.eval()
+                    images = inference_prompts(prompts, flux, t5, clip, vae,
+                                               height=512, width=512,
+                                               dtype=dtype)
+                    for i, image in enumerate(images):
+                        image = Image.fromarray((127.5 * (image + 1.0)).cpu().byte().numpy())
+                        image.save(f"epoch_{epoch}_{i}.png", quality=95, subsampling=0)
 
             unwrapped_model_state = accelerator.unwrap_model(flux).state_dict()
             save_file(unwrapped_model_state, f"models\\flux_{epoch}.safetensors")
